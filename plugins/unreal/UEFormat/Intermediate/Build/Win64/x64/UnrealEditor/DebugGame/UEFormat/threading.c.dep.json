@@ -1,0 +1,11 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\program files\\uefn\\builds\\unrealengineprojects\\fortnitegame\\plugins\\ueformat\\source\\ueformat\\thirdparty\\zstd\\common\\threading.c",
+        "ProvidedModule": "",
+        "Includes": [
+            "c:\\program files\\uefn\\builds\\unrealengineprojects\\fortnitegame\\plugins\\ueformat\\source\\ueformat\\thirdparty\\zstd\\common\\threading.h",
+            "c:\\program files\\uefn\\builds\\unrealengineprojects\\fortnitegame\\plugins\\ueformat\\source\\ueformat\\thirdparty\\zstd\\common\\debug.h"
+        ]
+    }
+}

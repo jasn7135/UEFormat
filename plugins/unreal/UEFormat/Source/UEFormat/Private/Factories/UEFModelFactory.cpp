@@ -9,6 +9,8 @@
 #include "SkeletalMeshAttributes.h"
 #include "StaticToSkeletalMeshConverter.h"
 #include "Engine/SkeletalMeshSocket.h"
+#include "Animation/MorphTarget.h"
+#include "Rendering/SkeletalMeshModel.h"
 
 class IMeshUtilities;
 
@@ -212,25 +214,9 @@ USkeletalMesh* UEFModelFactory::CreateSkeletalMesh(TArray<FLODData>& LODData, FS
 		MeshDescriptionPtrs.Add(&MeshDescriptions[LodIndex]); //Get the pointer and add it to the pointer array
 		ProcessLOD(MeshDescriptions[LodIndex], Data);
 
-		//Skeletal Mesh Attributes
+		//Skeletal Mesh Attributes (UE 5.2: bone data comes from FReferenceSkeleton, not mesh attributes)
 		FSkeletalMeshAttributes SkeletalAttributes(MeshDescriptions[LodIndex]);
 		SkeletalAttributes.Register();
-
-		FSkeletalMeshAttributes::FBoneNameAttributesRef BoneNames = SkeletalAttributes.GetBoneNames();
-		FSkeletalMeshAttributes::FBoneParentIndexAttributesRef BoneParentIndices = SkeletalAttributes.GetBoneParentIndices();
-		FSkeletalMeshAttributes::FBonePoseAttributesRef BonePoses = SkeletalAttributes.GetBonePoses();
-
-		//Bones
-		for (auto Index = 0; Index < RefSkeleton.GetRawBoneNum(); ++Index)
-		{
-			FMeshBoneInfo BoneInfo = RefSkeleton.GetRefBoneInfo()[Index];
-			FTransform BoneTransform = RefSkeleton.GetRefBonePose()[Index];
-
-			SkeletalAttributes.CreateBone();
-			BoneNames.Set(Index, BoneInfo.Name);
-			BoneParentIndices.Set(Index, BoneInfo.ParentIndex);
-			BonePoses.Set(Index, BoneTransform);
-		}
 
 		//Weights
 		FSkinWeightsVertexAttributesRef VertexWeights = SkeletalAttributes.GetVertexSkinWeights();
@@ -247,16 +233,6 @@ USkeletalMesh* UEFModelFactory::CreateSkeletalMesh(TArray<FLODData>& LODData, FS
 				BoneWeightsArray.Emplace(Weight.WeightBoneIndex, Weight.WeightAmount);
 			VertexWeights.Set(VertexIndex, UE::AnimationCore::FBoneWeights::Create(BoneWeightsArray));
 		}
-
-		//Morpth Targets
-		for (const auto& MorphTarget : Data.Morphs)
-		{
-			FString MorphName = MorphTarget.MorphName.c_str();
-			SkeletalAttributes.RegisterMorphTargetAttribute(*MorphName, false);
-			TVertexAttributesRef<FVector3f> OriginalVertexMorphPositionDelta = SkeletalAttributes.GetVertexMorphPositionDelta(*MorphName);
-			for (const auto& MorphDelta : MorphTarget.MorphDeltas)
-				OriginalVertexMorphPositionDelta.Set(MorphDelta.MorphVertexIndex, FVector3f(MorphDelta.MorphPosition.X, -MorphDelta.MorphPosition.Y, MorphDelta.MorphPosition.Z));
-		}
 	}
 	
 	TArray<FSkeletalMaterial> SkeletalMaterials = CreateSkeletalMaterials(LODData[0].Materials);
@@ -267,6 +243,31 @@ USkeletalMesh* UEFModelFactory::CreateSkeletalMesh(TArray<FLODData>& LODData, FS
 	SkeletalMesh->SetSkeleton(Skeleton);
 	Skeleton->MergeAllBonesToBoneTree(SkeletalMesh);
 	Skeleton->SetPreviewMesh(SkeletalMesh);
+
+	//Morph Targets (UE 5.2: create UMorphTarget objects directly)
+	for (const auto& MorphData : LODData[0].Morphs)
+	{
+		FString MorphName = MorphData.MorphName.c_str();
+		UMorphTarget* MorphTarget = NewObject<UMorphTarget>(SkeletalMesh, FName(*MorphName));
+
+		TArray<FMorphTargetDelta> Deltas;
+		Deltas.Reserve(MorphData.MorphDeltas.Num());
+		for (const auto& MorphDelta : MorphData.MorphDeltas)
+		{
+			FMorphTargetDelta Delta;
+			Delta.PositionDelta = FVector3f(MorphDelta.MorphPosition.X, -MorphDelta.MorphPosition.Y, MorphDelta.MorphPosition.Z);
+			Delta.TangentZDelta = MorphDelta.MorphNormals;
+			Delta.SourceIdx = MorphDelta.MorphVertexIndex;
+			Deltas.Add(Delta);
+		}
+
+		MorphTarget->GetMorphLODModels().SetNum(1);
+		MorphTarget->GetMorphLODModels()[0].Vertices = Deltas;
+		MorphTarget->GetMorphLODModels()[0].NumBaseMeshVerts = LODData[0].Vertices.Num();
+
+		SkeletalMesh->RegisterMorphTarget(MorphTarget, false);
+	}
+	SkeletalMesh->InitMorphTargetsAndRebuildRenderData();
 
 	Skeleton->PostEditChange();
 	FAssetRegistryModule::AssetCreated(Skeleton);
@@ -306,7 +307,14 @@ USkeleton* UEFModelFactory::CreateSkeleton(FString Name, UObject* Parent, EObjec
 	}
 
 	for (const auto& VirtualBone : Data.VirtualBones)
-		Skeleton->AddNewNamedVirtualBone(VirtualBone.SourceBoneName.c_str(), VirtualBone.TargetBoneName.c_str(), VirtualBone.VirtualBoneName.c_str());	
+	{
+		// UE 5.2: AddNewNamedVirtualBone doesn't exist, use AddNewVirtualBone + RenameVirtualBone
+		FName NewVBoneName;
+		if (Skeleton->AddNewVirtualBone(FName(VirtualBone.SourceBoneName.c_str()), FName(VirtualBone.TargetBoneName.c_str()), NewVBoneName))
+		{
+			Skeleton->RenameVirtualBone(NewVBoneName, FName(VirtualBone.VirtualBoneName.c_str()));
+		}
+	}	
 	
 	return Skeleton;
 }

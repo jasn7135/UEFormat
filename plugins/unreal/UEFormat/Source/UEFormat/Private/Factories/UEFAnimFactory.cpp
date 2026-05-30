@@ -1,8 +1,9 @@
-﻿// Copyright © 2025 Marcel K. All rights reserved.
+// Copyright © 2025 Marcel K. All rights reserved.
 
 #include "Factories/UEFAnimFactory.h"
 #include "ComponentReregisterContext.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/Skeleton.h"
 #include "Widgets/Anim/UEFAnimImportOptions.h"
 #include "Widgets/Anim/UEFAnimWidget.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -142,7 +143,10 @@ UObject* UEFAnimFactory::FactoryCreateFile(UClass* Class, UObject* Parent, FName
 			RichCurves.Add(RichKey);
 		}
 
-		FAnimationCurveIdentifier CurveIdentifier(Data.Curves[i].CurveName.c_str(), ERawCurveTrackTypes::RCT_Float);
+		// UE 5.2: FAnimationCurveIdentifier requires FSmartName, not a raw string
+		FSmartName CurveSmartName;
+		Skeleton->AddSmartNameAndModify(USkeleton::AnimCurveMappingName, FName(Data.Curves[i].CurveName.c_str()), CurveSmartName);
+		FAnimationCurveIdentifier CurveIdentifier(CurveSmartName, ERawCurveTrackTypes::RCT_Float);
 		Controller.AddCurve(CurveIdentifier);
 		Controller.SetCurveKeys(CurveIdentifier, RichCurves, false);
 	}
